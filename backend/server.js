@@ -19,10 +19,12 @@ app.use(express.urlencoded({ extended: true }));
 // Import routes
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const driveRoutes = require('./routes/drives');
 
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/drives', driveRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

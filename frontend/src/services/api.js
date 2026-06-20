@@ -49,4 +49,14 @@ export const adminAPI = {
     exportPDF: () => api.get('/admin/reports/pdf', { responseType: 'blob' })
 };
 
+// Drive endpoints
+export const driveAPI = {
+    getDrives: () => api.get('/drives'),
+    registerDrive: (id) => api.post(`/drives/${id}/register`),
+    unregisterDrive: (id) => api.post(`/drives/${id}/unregister`),
+    createDrive: (data) => api.post('/drives', data),
+    updateDrive: (id, data) => api.put(`/drives/${id}`, data),
+    deleteDrive: (id) => api.delete(`/drives/${id}`)
+};
+
 export default api;
