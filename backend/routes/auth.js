@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const Volunteer = require('../models/Volunteer');
+const Admin = require('../models/Admin');
 const { protect } = require('../middleware/auth');
 
 // Helper to generate JWT token
@@ -11,56 +12,94 @@ const generateToken = (id) => {
     });
 };
 
-// @desc    Register a new volunteer
+// @desc    Register a new volunteer or admin
 // @route   POST /api/auth/register
 // @access  Public
 router.post('/register', async (req, res) => {
     try {
         const { name, email, password, phone, age, skills, availability } = req.body;
 
-        // Check if volunteer exists
-        const userExists = await Volunteer.findOne({ email });
+        // Check if volunteer or admin exists
+        const volunteerExists = await Volunteer.findOne({ email });
+        const adminExists = await Admin.findOne({ email });
 
-        if (userExists) {
+        if (volunteerExists || adminExists) {
             return res.status(400).json({
                 success: false,
                 message: 'A user with this email already exists'
             });
         }
 
-        // Set role - automatically make email containing 'admin' an admin for ease of testing
+        // Set role - require adminCode if registering as admin, otherwise fallback to email check or default to volunteer
         let role = 'volunteer';
-        if (email && (email.toLowerCase().includes('admin') || email.toLowerCase().endsWith('@nayepankh.org') && email.toLowerCase().includes('admin'))) {
+        if (req.body.role === 'admin') {
+            const adminCode = req.body.adminCode;
+            const expectedCode = process.env.ADMIN_REGISTRATION_CODE || 'NayePankhAdmin2026';
+            if (adminCode === expectedCode) {
+                role = 'admin';
+            } else {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Invalid admin registration access code'
+                });
+            }
+        } else if (email && (email.toLowerCase().includes('admin') || email.toLowerCase().endsWith('@nayepankh.org') && email.toLowerCase().includes('admin'))) {
             role = 'admin';
         }
 
-        // Create volunteer
-        const volunteer = await Volunteer.create({
-            name,
-            email,
-            password,
-            phone,
-            age,
-            skills: skills || [],
-            availability: availability || [],
-            role,
-            status: role === 'admin' ? 'approved' : 'pending' // Admins are automatically approved
-        });
+        if (role === 'admin') {
+            // Create admin
+            const admin = await Admin.create({
+                name,
+                email,
+                password,
+                phone,
+                role
+            });
 
-        // Generate token
-        const token = generateToken(volunteer._id);
+            // Generate token
+            const token = generateToken(admin._id);
 
-        res.status(201).json({
-            success: true,
-            token,
-            user: {
-                id: volunteer._id,
-                name: volunteer.name,
-                email: volunteer.email,
-                role: volunteer.role,
-                status: volunteer.status
-            }
-        });
+            return res.status(201).json({
+                success: true,
+                token,
+                user: {
+                    id: admin._id,
+                    name: admin.name,
+                    email: admin.email,
+                    role: admin.role,
+                    status: 'active'
+                }
+            });
+        } else {
+            // Create volunteer
+            const volunteer = await Volunteer.create({
+                name,
+                email,
+                password,
+                phone,
+                age,
+                skills: skills || [],
+                availability: availability || [],
+                role,
+                status: 'pending' // Volunteers start as pending
+            });
+
+            // Generate token
+            const token = generateToken(volunteer._id);
+
+            return res.status(201).json({
+                success: true,
+                token,
+                user: {
+                    id: volunteer._id,
+                    name: volunteer.name,
+                    email: volunteer.email,
+                    role: volunteer.role,
+                    status: volunteer.status
+                }
+            });
+        }
     } catch (err) {
         res.status(500).json({
             success: false,
@@ -69,7 +108,7 @@ router.post('/register', async (req, res) => {
     }
 });
 
-// @desc    Login volunteer
+// @desc    Login volunteer or admin
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', async (req, res) => {
@@ -84,8 +123,14 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Check for user (include password in response)
-        const user = await Volunteer.findOne({ email }).select('+password');
+        // Check for user in Volunteer first
+        let user = await Volunteer.findOne({ email }).select('+password');
+        let isVolunteer = true;
+
+        if (!user) {
+            user = await Admin.findOne({ email }).select('+password');
+            isVolunteer = false;
+        }
 
         if (!user) {
             return res.status(401).json({
@@ -115,7 +160,7 @@ router.post('/login', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                status: user.status
+                status: isVolunteer ? user.status : 'active'
             }
         });
     } catch (err) {
@@ -131,7 +176,10 @@ router.post('/login', async (req, res) => {
 // @access  Private
 router.get('/me', protect, async (req, res) => {
     try {
-        const user = await Volunteer.findById(req.user.id);
+        let user = await Volunteer.findById(req.user.id);
+        if (!user) {
+            user = await Admin.findById(req.user.id);
+        }
         res.json({
             success: true,
             user

@@ -24,6 +24,8 @@ function Signup() {
         password: '',
         phone: '',
         age: '',
+        role: 'volunteer',
+        adminCode: '',
         skills: [],
         availability: []
     });
@@ -160,6 +162,35 @@ function Signup() {
                                     required
                                 />
                             </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Register As</label>
+                                <select
+                                    name="role"
+                                    className="form-input"
+                                    value={formData.role}
+                                    onChange={handleInputChange}
+                                    style={{ background: '#161c2d', color: '#fff', border: '1px solid rgba(255,255,255,0.08)' }}
+                                >
+                                    <option value="volunteer">Volunteer</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+
+                            {formData.role === 'admin' && (
+                                <div className="form-group">
+                                    <label className="form-label">Admin Access Code</label>
+                                    <input
+                                        type="password"
+                                        name="adminCode"
+                                        className="form-input"
+                                        placeholder="Enter secure admin code"
+                                        value={formData.adminCode}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                            )}
 
                             <div className="form-group">
                                 <label className="form-label">Password (Min. 6 characters)</label>

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Volunteer = require('../models/Volunteer');
+const Admin = require('../models/Admin');
 
 // Protect routes
 const protect = async (req, res, next) => {
@@ -25,7 +26,13 @@ const protect = async (req, res, next) => {
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nayepankh_123');
 
+        // Look for user in Volunteer collection first
         req.user = await Volunteer.findById(decoded.id);
+
+        // If not found, look in Admin collection
+        if (!req.user) {
+            req.user = await Admin.findById(decoded.id);
+        }
 
         if (!req.user) {
             return res.status(401).json({

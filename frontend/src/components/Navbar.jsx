@@ -20,7 +20,7 @@ function Navbar() {
         <nav className="navbar">
             <div className="container nav-container">
                 <Link to="/" className="logo">
-                    ServeTogether <span className="logo-dot">•</span>
+                    ServeTogether
                 </Link>
 
                 <div className="nav-links">
