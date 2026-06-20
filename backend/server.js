@@ -9,8 +9,27 @@ dotenv.config();
 const app = express();
 
 // Middleware
+const allowedOrigins = [
+    'http://localhost:5173',
+    'https://serve-together-six.vercel.app',
+    'https://serve-together-six.vercel.app/'
+];
+
+if (process.env.CLIENT_URL) {
+    const envOrigins = process.env.CLIENT_URL.split(',').map(url => url.trim()).filter(Boolean);
+    envOrigins.forEach(url => {
+        if (!allowedOrigins.includes(url)) {
+            allowedOrigins.push(url);
+        }
+        const cleanUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+        const slashUrl = cleanUrl + '/';
+        if (!allowedOrigins.includes(cleanUrl)) allowedOrigins.push(cleanUrl);
+        if (!allowedOrigins.includes(slashUrl)) allowedOrigins.push(slashUrl);
+    });
+}
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: allowedOrigins,
     credentials: true
 }));
 app.use(express.json());
