@@ -1,73 +1,59 @@
 const jwt = require('jsonwebtoken');
 const Volunteer = require('../models/Volunteer');
 
-// Protect routes - verify JWT token
-exports.protect = async (req, res, next) => {
+// Protect routes
+const protect = async (req, res, next) => {
     let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (
+        req.headers.authorization &&
+        req.headers.authorization.startsWith('Bearer')
+    ) {
+        // Set token from Bearer token in header
         token = req.headers.authorization.split(' ')[1];
     }
 
+    // Make sure token exists
     if (!token) {
         return res.status(401).json({
             success: false,
-            message: 'Not authorized to access this route. Please login.'
+            message: 'Not authorized to access this route'
         });
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Verify token
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nayepankh_123');
+
         req.user = await Volunteer.findById(decoded.id);
 
         if (!req.user) {
             return res.status(401).json({
                 success: false,
-                message: 'User not found. Please login again.'
+                message: 'No user found with this id'
             });
         }
 
         next();
-    } catch (error) {
+    } catch (err) {
         return res.status(401).json({
             success: false,
-            message: 'Invalid token. Please login again.'
+            message: 'Not authorized to access this route'
         });
     }
 };
 
-// Admin only middleware
-exports.adminOnly = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
+// Grant access to specific roles
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!req.user || !roles.includes(req.user.role)) {
+            return res.status(403).json({
+                success: false,
+                message: `User role '${req.user ? req.user.role : 'none'}' is not authorized to access this route`
+            });
+        }
         next();
-    } else {
-        return res.status(403).json({
-            success: false,
-            message: 'Access denied. Admin privileges required.'
-        });
-    }
+    };
 };
 
-// Volunteer only middleware
-exports.volunteerOnly = (req, res, next) => {
-    if (req.user && req.user.role === 'volunteer') {
-        next();
-    } else {
-        return res.status(403).json({
-            success: false,
-            message: 'Access denied. Volunteer privileges required.'
-        });
-    }
-};
-
-// Approved volunteer middleware
-exports.approvedOnly = (req, res, next) => {
-    if (req.user && (req.user.status === 'approved' || req.user.status === 'active' || req.user.role === 'admin')) {
-        next();
-    } else {
-        return res.status(403).json({
-            success: false,
-            message: 'Your account is not yet approved. Please wait for admin approval.'
-        });
-    }
-};
+module.exports = { protect, authorize };

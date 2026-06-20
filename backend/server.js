@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-const path = require('path');
 
 // Load environment variables
 dotenv.config();
@@ -14,35 +13,20 @@ app.use(cors({
     origin: process.env.CLIENT_URL || 'http://localhost:5173',
     credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Import routes
 const authRoutes = require('./routes/auth');
-const volunteerRoutes = require('./routes/volunteers');
-const eventRoutes = require('./routes/events');
-const attendanceRoutes = require('./routes/attendance');
-const certificateRoutes = require('./routes/certificates');
-const feedbackRoutes = require('./routes/feedback');
-const notificationRoutes = require('./routes/notifications');
 const adminRoutes = require('./routes/admin');
 
 // Use routes
 app.use('/api/auth', authRoutes);
-app.use('/api/volunteers', volunteerRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/certificates', certificateRoutes);
-app.use('/api/feedback', feedbackRoutes);
-app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'ServeTogether API is running' });
+    res.json({ status: 'ok', message: 'ServeTogether Volunteer Registration API is running' });
 });
 
 // Error handling middleware
@@ -50,19 +34,31 @@ app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(err.statusCode || 500).json({
         success: false,
-        message: err.message || 'Internal Server Error',
-        errors: err.errors || []
+        message: err.message || 'Internal Server Error'
     });
 });
 
-// Connect to MongoDB Atlas
+// Connect to MongoDB Atlas (with local fallback)
 const connectDB = async () => {
+    const primaryURI = process.env.MONGODB_URI;
+    const localURI = 'mongodb://127.0.0.1:27017/servetogether';
+
     try {
-        const conn = await mongoose.connect(process.env.MONGODB_URI);
-        console.log(`MongoDB Connected: ${conn.connection.host}`);
+        if (!primaryURI) {
+            throw new Error('MONGODB_URI is not defined in environment variables');
+        }
+        const conn = await mongoose.connect(primaryURI);
+        console.log(`MongoDB Connected (Atlas): ${conn.connection.host}`);
     } catch (error) {
-        console.error(`MongoDB Connection Error: ${error.message}`);
-        process.exit(1);
+        console.warn(`MongoDB Atlas Connection Failed: ${error.message}`);
+        console.log('Attempting connection to local MongoDB database...');
+        try {
+            const conn = await mongoose.connect(localURI);
+            console.log(`MongoDB Connected (Local): ${conn.connection.host}`);
+        } catch (localError) {
+            console.error(`Local MongoDB Connection Error: ${localError.message}`);
+            process.exit(1);
+        }
     }
 };
 

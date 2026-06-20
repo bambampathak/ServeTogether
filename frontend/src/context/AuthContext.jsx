@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import api from '../services/api';
+import { authAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -8,7 +8,7 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // Check for saved token on mount
+    // Load logged in user info on mount
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (token) {
@@ -21,8 +21,8 @@ export const AuthProvider = ({ children }) => {
     const loadUser = async () => {
         try {
             setLoading(true);
-            const res = await api.get('/auth/me');
-            setUser(res.data.volunteer);
+            const res = await authAPI.getMe();
+            setUser(res.data.user);
         } catch (err) {
             localStorage.removeItem('token');
             setUser(null);
@@ -33,44 +33,36 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password) => {
         try {
-            const res = await api.post('/auth/login', { email, password });
-            localStorage.setItem('token', res.data.token);
-            setUser(res.data.volunteer);
             setError(null);
-            return res.data;
+            const res = await authAPI.login({ email, password });
+            localStorage.setItem('token', res.data.token);
+            setUser(res.data.user);
+            return res.data.user;
         } catch (err) {
-            setError(err.response?.data?.message || 'Login failed');
-            throw err;
+            const errMsg = err.response?.data?.message || 'Login failed';
+            setError(errMsg);
+            throw new Error(errMsg);
         }
     };
 
-    const signup = async (volunteerData) => {
+    const signup = async (userData) => {
         try {
-            const res = await api.post('/auth/register', volunteerData);
-            localStorage.setItem('token', res.data.token);
-            setUser(res.data.volunteer);
             setError(null);
-            return res.data;
+            const res = await authAPI.register(userData);
+            localStorage.setItem('token', res.data.token);
+            setUser(res.data.user);
+            return res.data.user;
         } catch (err) {
-            setError(err.response?.data?.message || 'Registration failed');
-            throw err;
+            const errMsg = err.response?.data?.message || 'Registration failed';
+            setError(errMsg);
+            throw new Error(errMsg);
         }
     };
 
     const logout = () => {
         localStorage.removeItem('token');
         setUser(null);
-    };
-
-    const updateProfile = async (profileData) => {
-        try {
-            const res = await api.put('/volunteers/profile', profileData);
-            setUser(res.data.volunteer);
-            return res.data;
-        } catch (err) {
-            setError(err.response?.data?.message || 'Profile update failed');
-            throw err;
-        }
+        setError(null);
     };
 
     const value = {
@@ -80,7 +72,6 @@ export const AuthProvider = ({ children }) => {
         login,
         signup,
         logout,
-        updateProfile,
         loadUser,
         setError
     };

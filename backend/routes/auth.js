@@ -2,60 +2,58 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const Volunteer = require('../models/Volunteer');
-const Notification = require('../models/Notification');
 const { protect } = require('../middleware/auth');
-const { sendRegistrationEmail } = require('../utils/emailSender');
 
-// @route   POST /api/auth/register
+// Helper to generate JWT token
+const generateToken = (id) => {
+    return jwt.sign({ id }, process.env.JWT_SECRET || 'nayepankh_123', {
+        expiresIn: process.env.JWT_EXPIRE || '7d'
+    });
+};
+
 // @desc    Register a new volunteer
+// @route   POST /api/auth/register
 // @access  Public
 router.post('/register', async (req, res) => {
     try {
-        const {
-            name, email, password, phone, age, gender, city, address,
-            skills, otherSkills, availability, experience, motivation,
-            emergencyContact
-        } = req.body;
+        const { name, email, password, phone, age, skills, availability } = req.body;
 
-        // Check if email already exists
-        const existingVolunteer = await Volunteer.findOne({ email });
-        if (existingVolunteer) {
+        // Check if volunteer exists
+        const userExists = await Volunteer.findOne({ email });
+
+        if (userExists) {
             return res.status(400).json({
                 success: false,
-                message: 'Email is already registered. Please login or use a different email.'
+                message: 'A user with this email already exists'
             });
+        }
+
+        // Set role - automatically make email containing 'admin' an admin for ease of testing
+        let role = 'volunteer';
+        if (email && (email.toLowerCase().includes('admin') || email.toLowerCase().endsWith('@nayepankh.org') && email.toLowerCase().includes('admin'))) {
+            role = 'admin';
         }
 
         // Create volunteer
         const volunteer = await Volunteer.create({
-            name, email, password, phone, age, gender, city, address,
-            skills, otherSkills, availability, experience, motivation,
-            emergencyContact
+            name,
+            email,
+            password,
+            phone,
+            age,
+            skills: skills || [],
+            availability: availability || [],
+            role,
+            status: role === 'admin' ? 'approved' : 'pending' // Admins are automatically approved
         });
 
-        // Generate JWT token
-        const token = volunteer.getSignedJwtToken();
-
-        // Create notification
-        await Notification.create({
-            recipient: volunteer._id,
-            type: 'registration_success',
-            title: 'Registration Successful',
-            message: `Welcome ${name}! Your registration with Nayepankh Foundation is pending approval. We'll notify you once it's approved.`,
-            sentVia: 'in-app'
-        });
-
-        // Send registration email
-        try {
-            await sendRegistrationEmail(volunteer);
-        } catch (emailError) {
-            console.error('Registration email failed:', emailError.message);
-        }
+        // Generate token
+        const token = generateToken(volunteer._id);
 
         res.status(201).json({
             success: true,
             token,
-            volunteer: {
+            user: {
                 id: volunteer._id,
                 name: volunteer.name,
                 email: volunteer.email,
@@ -63,23 +61,22 @@ router.post('/register', async (req, res) => {
                 status: volunteer.status
             }
         });
-    } catch (error) {
-        console.error('Registration error:', error);
+    } catch (err) {
         res.status(500).json({
             success: false,
-            message: error.message || 'Server error during registration'
+            message: err.message || 'Server Error'
         });
     }
 });
 
+// @desc    Login volunteer
 // @route   POST /api/auth/login
-// @desc    Login volunteer/admin
 // @access  Public
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Validate input
+        // Validate email & password
         if (!email || !password) {
             return res.status(400).json({
                 success: false,
@@ -87,208 +84,89 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Find volunteer by email (include password)
-        const volunteer = await Volunteer.findOne({ email }).select('+password');
-        if (!volunteer) {
+        // Check for user (include password in response)
+        const user = await Volunteer.findOne({ email }).select('+password');
+
+        if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials. No account found with this email.'
+                message: 'Invalid credentials'
             });
         }
 
-        // Compare password
-        const isMatch = await volunteer.comparePassword(password);
+        // Check if password matches
+        const isMatch = await user.matchPassword(password);
+
         if (!isMatch) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials. Incorrect password.'
+                message: 'Invalid credentials'
             });
         }
 
-        // Generate JWT token
-        const token = volunteer.getSignedJwtToken();
+        // Generate token
+        const token = generateToken(user._id);
 
         res.json({
             success: true,
             token,
-            volunteer: {
-                id: volunteer._id,
-                name: volunteer.name,
-                email: volunteer.email,
-                role: volunteer.role,
-                status: volunteer.status,
-                profilePhoto: volunteer.profilePhoto
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                status: user.status
             }
         });
-    } catch (error) {
-        console.error('Login error:', error);
+    } catch (err) {
         res.status(500).json({
             success: false,
-            message: 'Server error during login'
+            message: err.message || 'Server Error'
         });
     }
 });
 
+// @desc    Get current logged in user
 // @route   GET /api/auth/me
-// @desc    Get current logged in volunteer
 // @access  Private
 router.get('/me', protect, async (req, res) => {
     try {
-        const volunteer = await Volunteer.findById(req.user._id)
-            .populate('certificates')
-            .populate('registeredEvents');
-
+        const user = await Volunteer.findById(req.user.id);
         res.json({
             success: true,
-            volunteer
+            user
         });
-    } catch (error) {
-        console.error('Get me error:', error);
+    } catch (err) {
         res.status(500).json({
             success: false,
-            message: 'Server error'
+            message: 'Server Error'
         });
     }
 });
 
-// @route   PUT /api/auth/updatepassword
-// @desc    Update password
+// @desc    Download Volunteer Certificate
+// @route   GET /api/auth/certificate
 // @access  Private
-router.put('/updatepassword', protect, async (req, res) => {
+router.get('/certificate', protect, async (req, res) => {
     try {
-        const { currentPassword, newPassword } = req.body;
-
-        const volunteer = await Volunteer.findById(req.user._id).select('+password');
-
-        // Check current password
-        const isMatch = await volunteer.comparePassword(currentPassword);
-        if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Current password is incorrect'
-            });
-        }
-
-        volunteer.password = newPassword;
-        await volunteer.save();
-
-        const token = volunteer.getSignedJwtToken();
-
-        res.json({
-            success: true,
-            token,
-            message: 'Password updated successfully'
-        });
-    } catch (error) {
-        console.error('Update password error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-});
-
-// @route   POST /api/auth/forgotpassword
-// @desc    Forgot password - generate reset token
-// @access  Public
-router.post('/forgotpassword', async (req, res) => {
-    try {
-        const { email } = req.body;
-
-        const volunteer = await Volunteer.findOne({ email });
+        const volunteer = await Volunteer.findById(req.user.id);
         if (!volunteer) {
-            return res.status(404).json({
-                success: false,
-                message: 'No account found with this email'
-            });
+            return res.status(404).json({ success: false, message: 'Volunteer not found' });
         }
-
-        // Generate reset token
-        const resetToken = jwt.sign(
-            { id: volunteer._id },
-            process.env.JWT_SECRET,
-            { expiresIn: '1h' }
-        );
-
-        volunteer.resetPasswordToken = resetToken;
-        volunteer.resetPasswordExpire = Date.now() + 3600000; // 1 hour
-        await volunteer.save();
-
-        const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
-
-        // Send reset email
-        const { sendEmail } = require('../utils/emailSender');
-        await sendEmail({
-            to: volunteer.email,
-            subject: 'ServeTogether - Password Reset',
-            html: `
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px; font-family: Arial, sans-serif;">
-          <h2 style="color: #2E86AB;">Password Reset Request</h2>
-          <p>Hello ${volunteer.name},</p>
-          <p>You requested a password reset. Click the button below to reset your password:</p>
-          <a href="${resetUrl}" style="background: #2E86AB; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
-          <p>This link will expire in 1 hour.</p>
-          <p>If you didn't request this, please ignore this email.</p>
-        </div>
-      `
-        });
-
-        res.json({
-            success: true,
-            message: 'Password reset email sent'
-        });
-    } catch (error) {
-        console.error('Forgot password error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-});
-
-// @route   PUT /api/auth/resetpassword/:resettoken
-// @desc    Reset password using token
-// @access  Public
-router.put('/resetpassword/:resettoken', async (req, res) => {
-    try {
-        const { newPassword } = req.body;
-
-        // Verify reset token
-        const decoded = jwt.verify(req.params.resettoken, process.env.JWT_SECRET);
-
-        const volunteer = await Volunteer.findOne({
-            _id: decoded.id,
-            resetPasswordToken: req.params.resettoken,
-            resetPasswordExpire: { $gt: Date.now() }
-        });
-
-        if (!volunteer) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid or expired reset token'
-            });
+        if (volunteer.status !== 'approved') {
+            return res.status(400).json({ success: false, message: 'Certificate is only available for approved volunteers' });
         }
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=volunteer_certificate.pdf`);
 
-        // Set new password
-        volunteer.password = newPassword;
-        volunteer.resetPasswordToken = undefined;
-        volunteer.resetPasswordExpire = undefined;
-        await volunteer.save();
-
-        const token = volunteer.getSignedJwtToken();
-
-        res.json({
-            success: true,
-            token,
-            message: 'Password reset successful'
-        });
-    } catch (error) {
-        console.error('Reset password error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Invalid or expired reset token'
-        });
+        const { generateVolunteerCertificate } = require('../utils/report');
+        generateVolunteerCertificate(volunteer, res);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Server error generating certificate' });
     }
 });
 
 module.exports = router;
+

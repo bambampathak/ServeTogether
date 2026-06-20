@@ -193,6 +193,33 @@ ServeTogether/
 - Cloudinary account (for file uploads)
 - Gmail account (for sending emails, or other SMTP)
 
+### ⚡ Quick Start (Combined Run)
+
+You can verify/install all dependencies and run both the frontend and backend concurrently using the root runner:
+
+**On Windows:**
+Simply run the `run.bat` file in the root directory:
+```bash
+.\run.bat
+```
+
+**On macOS / Linux / Git Bash:**
+Make `run.sh` executable and run it:
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+**Using npm:**
+If you prefer running via npm:
+```bash
+# 1. Install all dependencies (root, backend, frontend)
+npm run install:all
+
+# 2. Start the dev servers concurrently
+npm run dev
+```
+
 ### 1. Backend Setup
 
 ```bash
